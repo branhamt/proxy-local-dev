@@ -1,0 +1,7 @@
+caddy_service_running: true
+dns_and_reverse_proxies:
+- { domain: "somesite1.lcl", present: true, caddy_served: true, port: 1313, ssl: true }
+- { domain: "somesite2.lcl", present: true, caddy_served: false, port: 8080, ssl: false }
+- { domain: "somesite3.lcl", present: true, caddy_served: true, port: 8082, ssl: true }
+- { domain: "somesite4.lcl", present: false, caddy_served: true, port: 8001, ssl: true }
+manage_dns_reverse_proxies: true

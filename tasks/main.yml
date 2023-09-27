@@ -1,0 +1,139 @@
+---
+
+# This role does 3 things:
+
+# 1. Install Caddy Server
+# 2. Turn on/off Caddy service
+# 3. Configure reverse proxies for local website development.
+
+- name: Install Caddy Server
+  block:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install utilities
+      ansible.builtin.apt:
+        pkg:
+          - ca-certificates
+          - gnupg
+
+    - name: Install Caddy signing key
+      ansible.builtin.apt_key:
+        url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+        keyring: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        state: present
+
+    - name: Add Caddy "deb" to sources
+      ansible.builtin.blockinfile:
+        path: /etc/apt/sources.list.d/caddy-stable.list
+        create: true
+        block: |
+          # Source: Caddy
+          # Site: https://github.com/caddyserver/caddy
+          # Repository: Caddy / stable
+          # Description: Fast, multi-platform web server with automatic HTTPS
+          deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+          deb-src [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install Caddy
+      ansible.builtin.apt:
+        pkg:
+          - caddy
+
+- name: Configure reverse proxies
+  block:
+    - name: Add host to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1      {{ item.domain }}"
+        state: present
+      loop: "{{ dns_and_reverse_proxies }}"
+
+    - name: Add proxy to Caddyfile
+      ansible.builtin.blockinfile:
+        path: /etc/caddy/Caddyfile
+        state: present
+        block: |
+          {% if not item.ssl %}http://{% endif %}{{ item.domain }} {
+            reverse_proxy :{{ item.port }}
+            {% if item.ssl %}
+            tls internal
+            {% endif %}
+          }
+        marker: "# {mark} {{ item.domain }}:{{ item.port }} ANSIBLE MANAGED BLOCK"
+      when: item.caddy_served
+      loop: "{{ dns_and_reverse_proxies }}"
+  when: manage_dns_reverse_proxies and item.present
+  tags: update-local-dns-proxy
+
+- name: Remove reverse proxies
+  block:
+    - name: Remove host from /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1      {{ item.domain }}"
+        state: absent
+      loop: "{{ dns_and_reverse_proxies }}"
+
+    - name: Remove proxy from Caddyfile
+      ansible.builtin.blockinfile:
+        path: /etc/caddy/Caddyfile
+        state: absent
+        block: |
+          {% if not item.ssl %}http://{% endif %}{{ item.domain }} {
+            reverse_proxy :{{ item.port }}
+            {% if item.ssl %}
+            tls internal
+            {% endif %}
+          }
+        marker: "# {mark} {{ item.domain }}:{{ item.port }} ANSIBLE MANAGED BLOCK"
+      loop: "{{ dns_and_reverse_proxies }}"
+  become: true
+  when: not manage_dns_reverse_proxies or not item.present
+  tags: update-local-dns-proxy
+
+- name: Reload Caddy
+  ansible.builtin.systemd:
+    name: caddy
+    state: reloaded
+  # become: true
+  tags: update-local-dns-proxy
+
+- name: Turn on/off Caddy services
+  vars:
+    services:
+      - caddy
+  block:
+    - name: Enable caddy services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+      when: caddy_service_running
+      loop: "{{ services }}"
+
+    - name: Turn on caddy services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+      when: caddy_service_running
+      loop: "{{ services }}"
+
+    - name: Disable caddy services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+      when: not caddy_service_running
+      loop: "{{ services }}"
+
+    - name: Turn off caddy services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      when: not caddy_service_running
+      loop: "{{ services }}"
+  tags: update-local-dns-proxy
