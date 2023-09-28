@@ -19,4 +19,10 @@ Some options that are set in your vars file are:
 - use SSL or not
 - reverse proxied by Caddy or not
 
+## Notes
+
 The setup assumes that you have a server or service running locally on some port. You can use it with services, but some services may require additional config (like setting the host) to make this work.
+
+You may get unpredictable results with .dev domains. Some appear to work and some don't.
+
+[Read more about this setup here.](https://www.swe-devops.com/posts/configuring-etc-hosts-caddy-reverse-proxy-ansible-local-development/)
